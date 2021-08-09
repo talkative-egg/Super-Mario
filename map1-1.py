@@ -1,3 +1,7 @@
+
+# Code for map1-1 not really working, refer to survival.py for TP1
+
+
 from cmu_112_graphics import *
 
 import math
