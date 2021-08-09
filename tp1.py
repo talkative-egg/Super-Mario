@@ -1,4 +1,3 @@
-
 from cmu_112_graphics import *
 
 import math
@@ -69,7 +68,7 @@ class Mario(object):
         self.xVelocity = 0
         self.yVelocity = 0
 
-    def moveRight(self, map):
+    def moveRight(self, app):
         if(self.spriteX < len(Mario.sprites) // 2 + 1):
             self.spriteX = len(Mario.sprites) // 2 + 1
 
@@ -77,15 +76,15 @@ class Mario(object):
         if(self.spriteX >= len(Mario.sprites)):
             self.spriteX = len(Mario.sprites) // 2 + 1
 
-        if(map.inMargin(self.left + Mario.width, self.xVelocity)):
-            map.scrollMap(self.xVelocity)
+        if(app.map.inMargin(self.left + Mario.width, self.xVelocity)):
+            app.map.scrollMap(self.xVelocity)
         else:
             self.left += self.xVelocity
         
-        if self.left > Map.width - Mario.width:
-            self.left = Map.width - Mario.width
+        if self.left > app.width - Mario.width:
+            self.left = app.width - Mario.width
     
-    def moveLeft(self, map):
+    def moveLeft(self):
         if(self.spriteX >= len(Mario.sprites) // 2 + 1):
             self.spriteX = len(Mario.sprites) // 2
 
@@ -98,7 +97,7 @@ class Mario(object):
         if self.left < 0:
             self.left = 0
 
-    def move(self, map):
+    def move(self, app):
 
         if self.xMotion == 1:
 
@@ -107,7 +106,7 @@ class Mario(object):
             elif self.xVelocity < 20:
                 self.xVelocity *= 2
 
-            self.moveRight(map)
+            self.moveRight(app)
 
         elif self.xMotion == -1:
 
@@ -116,7 +115,7 @@ class Mario(object):
             elif self.xVelocity > -20:
                 self.xVelocity *= 2
 
-            self.moveLeft(map)
+            self.moveLeft()
         
         elif self.xMotion == 0:
 
@@ -126,9 +125,9 @@ class Mario(object):
             self.xVelocity /= 1.25
 
             if self.xVelocity > 0:
-                self.moveRight(map)
+                self.moveRight(app)
             elif self.xVelocity < 0:
-                self.moveLeft(map)
+                self.moveLeft()
     
     def drawMario(self, app, canvas):
         image = Mario.sprites[self.spriteX]
@@ -151,9 +150,12 @@ class Survival(object):
         Survival.groundBlock = (app.loadImage('./assets/images/tiles.png')
                                         .crop((0, 0, 16, 16))
                                         .resize((32, 32)))
+    
+    def __init__(self):
+        self.leftShift = 0
 
     def drawBlocks(self, app, canvas):
-        cols = math.ceil(app.width / 32)
+        cols = math.ceil(app.width / 32) + 1
         rows = 2
 
         for row in range(rows):
@@ -171,20 +173,25 @@ def survival_redrawAll(app, canvas):
     app.survival.redrawAll(app, canvas)
 
 def appStarted(app):
+
+    app.map = Map(app, './assets/images/map1-1.png')
+
     Mario.initialize(app)
     app.mario = Mario(80, 385)
-    app.map = Map(app, './assets/images/map1-1.png')
+
     app.timerDelay = 20
 
     app.block = (app.loadImage('./assets/images/tiles.png').crop((0, 0, 16, 16))
                                                            .resize((32, 32)))
     app.survival = Survival()
     app.survival.initialize(app)
-    app.mode = "survival"
+    # app.mode = "survival"
+
+    app._root.resizable(False, False)
 
 def timerFired(app):
     if app.mario.xMotion != 0 or app.mario.xVelocity != 0:
-        app.mario.move(app.map)
+        app.mario.move(app)
 
 def keyPressed(app, event):
 
@@ -210,6 +217,7 @@ def keyReleased(app, event):
     print("key released")
 
     if event.key == 'Right' or event.key == 'Left':
+        
         app.mario.xMotion = 0
 
 def redrawAll(app, canvas):
