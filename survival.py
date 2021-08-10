@@ -213,38 +213,19 @@ class Mario(object):
                             image=ImageTk.PhotoImage(image))
 
 ###################
-#  Survival Map
+#  Clouds
 ###################
 
-class Survival(object):
-    
-    # constructor
+class Clouds(object):
+
     def __init__(self, app):
 
-        self.app = app
-
-        # For scrolling effect
-        self.leftShift = 0
-
         # images from http://www.mariouniverse.com/sprites-nes-smb/
-        self.groundBlock = (app.loadImage('./assets/images/tiles.png')
-                                        .crop((0, 0, 16, 16))
-                                        .resize((32, 32)))
         self.cloud = (app.loadImage('./assets/images/tiles.png')
                                         .crop((8, 320, 40, 344))
                                         .resize((64, 48)))
         
-        # Sets left and right margin for when map scrolls
-        self.margin = 150
-
-        # Map width is the same as app width
-        self.width = app.width
-
-        # Width of ground block
-        self.blockWidth = 32
-
-        # Ground height
-        self.level0 = app.height - self.blockWidth * 2
+        self.app = app
 
         # Sets up the clouds
         self.clouds = []
@@ -278,15 +259,7 @@ class Survival(object):
                 y = random.randint(48, maxTop - 48)
 
             self.clouds.append((x, y))
-
-    # Checks if character is going to be in the right margin of map
-    def inRightMargin(self, right, xVelocity):
-        return right + xVelocity > self.width - self.margin
-
-    # Checks if character is going to be in the left margin of map
-    def inLeftMargin(self, left, xVelocity):
-        return left + xVelocity < self.margin
-
+    
     # Moves each of the clouds by xVelocity
     def moveClouds(self, xVelocity):
 
@@ -310,15 +283,40 @@ class Survival(object):
 
         self.clouds = newClouds
 
-    # Scrolls the map by xVelocity
-    def scrollMap(self, xVelocity):
+    # Draws the clouds
+    def drawClouds(self, canvas):
+
+        for (cx, cy) in self.clouds:
+            canvas.create_image(cx, cy, 
+                                image=ImageTk.PhotoImage(self.cloud))
+
+###################
+#  Ground Blocks
+###################
+
+class GroundBlocks(object):
+
+    # constructor
+    def __init__(self, app):
+
+        self.app = app
+
+        # For scrolling effect
+        self.leftShift = 0
+
+        # images from http://www.mariouniverse.com/sprites-nes-smb/
+        self.groundBlock = (app.loadImage('./assets/images/tiles.png')
+                                        .crop((0, 0, 16, 16))
+                                        .resize((32, 32)))
+        
+        # Width of ground block
+        self.blockWidth = 32
+    
+    def scrollBlocks(self, xVelocity):
 
         self.leftShift += xVelocity
         self.leftShift = self.leftShift % self.blockWidth
-
-        # Moves the clouds
-        self.moveClouds(xVelocity)
-
+    
     # Draws the ground blocks
     def drawBlocks(self, canvas):
 
@@ -331,20 +329,55 @@ class Survival(object):
                 cy = self.app.height - row * self.blockWidth - 16
                 canvas.create_image(cx, cy, 
                                 image=ImageTk.PhotoImage(self.groundBlock))
-    
-    # Draws the clouds
-    def drawClouds(self, canvas):
 
-        for (cx, cy) in self.clouds:
-            canvas.create_image(cx, cy, 
-                                image=ImageTk.PhotoImage(self.cloud))
+
+###################
+#  Survival Map
+###################
+
+class Survival(object):
+    
+    # constructor
+    def __init__(self, app):
+
+        self.app = app
+        
+        # Sets left and right margin for when map scrolls
+        self.margin = 150
+
+        # Sets up the ground blocks
+        self.groundBlocks = GroundBlocks(app)
+
+        # Ground height
+        self.level0 = app.height - self.groundBlocks.blockWidth * 2
+
+        # Sets up the clouds
+        self.clouds = Clouds(app)
+
+    # Checks if character is going to be in the right margin of map
+    def inRightMargin(self, right, xVelocity):
+        return right + xVelocity > self.app.width - self.margin
+
+    # Checks if character is going to be in the left margin of map
+    def inLeftMargin(self, left, xVelocity):
+        return left + xVelocity < self.margin
+
+    # Scrolls the map by xVelocity
+    def scrollMap(self, xVelocity):
+
+        # Scrolls the ground blocks
+        self.groundBlocks.scrollBlocks(xVelocity)
+
+        # Moves the clouds
+        self.clouds.moveClouds(xVelocity)
+    
 
     # Draw background and everything in map
     def drawMap(self, canvas):
         canvas.create_rectangle(0, 0, self.app.width, self.app.height, 
                                 fill="#5c94fc")
-        self.drawClouds(canvas)
-        self.drawBlocks(canvas)
+        self.clouds.drawClouds(canvas)
+        self.groundBlocks.drawBlocks(canvas)
 
 # Draws everything in survival mode
 def survival_redrawAll(app, canvas):
@@ -401,7 +434,7 @@ def survival_keyReleased(app, event):
 
 # Model
 def appStarted(app):
-    
+
     # Starts off in title screen
     app.mode = "titleScreen"
     app.timerDelay = 20
@@ -419,6 +452,7 @@ def titleScreen_redrawAll(app, canvas):
 
 # Goes into different modes when keys pressed
 def titleScreen_keyPressed(app, event):
+
     if event.key == "Left":
         app.mode = "classic"
     elif event.key == "Right":
