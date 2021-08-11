@@ -15,8 +15,8 @@ class Mario(object):
 
     sprites = []
 
-    width = 34
-    height = 32
+    width = 28
+    height = 25
     
     # Initalizes the sprites for Mario
     @staticmethod
@@ -37,7 +37,7 @@ class Mario(object):
 
             # resize method learned from 
             # https://www.tutorialspoint.com/how-to-resize-an-image-using-tkinter
-            sprite = sprite.resize((34, 32))
+            sprite = sprite.resize((Mario.width, Mario.height))
             Mario.sprites.append(sprite)
 
     # Construtor, takes in the initial position of mario
@@ -63,8 +63,19 @@ class Mario(object):
         # Used for sprites
         self.facingRight = True
 
+        self.level = 0
+
     # Moves mario to the right by xVelocity amount
     def moveRight(self, app):
+
+        collided = app.map.collided(self.top, self.left + Mario.width,
+                            self.top + Mario.height, self.left,
+                            self.xVelocity, self.yVelocity)
+
+        if collided[0] and collided[1] == "left":
+            self.xVelocity = 0
+            self.left = collided[2] - Mario.width
+            return
 
         # Sets the initial sprite to right if it weren't
         if(self.spriteX < len(Mario.sprites) // 2 + 1):
@@ -88,6 +99,15 @@ class Mario(object):
     
     # Moves mario to the left by -xVelocity amout
     def moveLeft(self, app):
+
+        collided = app.map.collided(self.top, self.left + Mario.width,
+                            self.top + Mario.height, self.left,
+                            self.xVelocity, self.yVelocity)
+
+        if collided[0] and collided[1] == "right":
+            self.xVelocity = 0
+            self.left = collided[2]
+            return
 
         # Sets initial sprite to left if it weren't
         if(self.spriteX >= len(Mario.sprites) // 2 + 1):
@@ -119,8 +139,8 @@ class Mario(object):
             # Sets velocity to positive
             if self.xVelocity <= 0:
                 self.xVelocity = 1
-            # Accelerates by 1.3 times until reaches 20
-            elif self.xVelocity < 20:
+            # Accelerates by 1.3 times until reaches 10
+            elif self.xVelocity < 10:
                 self.xVelocity *= 1.3
             # Prevents bugs
             elif self.xVelocity < 0:
@@ -138,8 +158,8 @@ class Mario(object):
             # Sets velocity to negative
             if self.xVelocity >= 0:
                 self.xVelocity = -1
-            # Accelerates by 1.3 times until reaches -20
-            elif self.xVelocity > -20:
+            # Accelerates by 1.3 times until reaches -10
+            elif self.xVelocity > -10:
                 self.xVelocity *= 1.3
             # Prevents bugs
             elif self.xVelocity > 0:
@@ -170,13 +190,26 @@ class Mario(object):
                 self.moveRight(app)
             elif self.xVelocity < 0:
                 self.moveLeft(app)
-    
+
+    def fall(self, map):
+
+        pass
+
+        # collided = map.collided(self.top, self.left + Mario.width,
+        #                     self.top + Mario.height, self.left,
+        #                     0, -2)
+
+        # if not collided[0]:
+        #     self.yMotion = 0
+        #     self.yVelocity = 0.5
+
     # Does one small part of jumping at a time
     def jump(self, map):
 
-        # Sets initial yVelocity to 30 if mario were static
+        # Sets initial yVelocity to 35 if mario were static
         if self.yVelocity == 0:
-            self.yVelocity = 30
+
+            self.yVelocity = 35
 
         # If character is falling below the leveled ground then set
         # character to be on the ground
@@ -187,11 +220,11 @@ class Mario(object):
             self.yVelocity = 0
 
         # If character is falling, increase top margin by yVelocity
-        # Then increase falling speed by 1.35 times
+        # Then increase falling speed by 1.4 times
         elif self.yMotion == 0:
 
             self.top += self.yVelocity
-            self.yVelocity *= 1.35
+            self.yVelocity *= 1.4
         
         # If character is jumping, decrease top margin by yVelocity
         # Then decrease speed going up by 1.3 times
@@ -201,9 +234,29 @@ class Mario(object):
             self.yVelocity /= 1.3
         
         # If yVelocity is near 0, set it to 0
-        if self.yVelocity < 1:
+        if self.yVelocity < 3:
 
             self.yMotion = 0
+        
+        collided = map.collided(self.top, self.left + Mario.width,
+                            self.top + Mario.height, self.left,
+                            self.xVelocity, self.yVelocity)
+
+        if collided[0]:
+
+            if collided[1] == "top":
+                
+                self.yMotion = 0
+
+            elif collided[1] == "bottom":
+
+                self.yVelocity = 0
+                self.yMotion = 0
+                self.level = 1
+
+                self.top = collided[2] - Mario.height
+
+            return
     
     # Draws current frame of mario
     def drawMario(self, canvas):
@@ -297,7 +350,7 @@ class Clouds(object):
 class GroundBlocks(object):
 
     # constructor
-    def __init__(self, app):
+    def __init__(self, app, blockWidth):
 
         self.app = app
 
@@ -307,10 +360,10 @@ class GroundBlocks(object):
         # images from http://www.mariouniverse.com/sprites-nes-smb/
         self.groundBlock = (app.loadImage('./assets/images/tiles.png')
                                         .crop((0, 0, 16, 16))
-                                        .resize((32, 32)))
+                                        .resize((blockWidth, blockWidth)))
         
         # Width of ground block
-        self.blockWidth = 32
+        self.blockWidth = blockWidth
     
     def scrollBlocks(self, xVelocity):
 
@@ -331,6 +384,188 @@ class GroundBlocks(object):
                                 image=ImageTk.PhotoImage(self.groundBlock))
 
 
+class Blocks(object):
+
+    def __init__(self, app, blockWidth, mapWidth):
+
+        self.app = app
+        self.blockWidth = blockWidth
+
+        self.maxBlocks = mapWidth // blockWidth
+
+        self.blocks = []
+
+        self.startPos = Block(app, blockWidth, 1, blockWidth * 5)
+
+        self.finalBlock = Block(app, blockWidth, 2, mapWidth - blockWidth * 5)
+
+        self.blocks.append(self.startPos)
+        
+        self.blocks.append(self.finalBlock)
+
+        while not self.completeLevel():
+            pass
+    
+
+    def getNewBlock(self, blocksTried):
+
+        level = random.randint(1, 3)
+        leftPosition = random.randint(0, self.maxBlocks)
+
+        thisBlock = Block(self.app, self.blockWidth, level, self.blockWidth * leftPosition)
+
+        for block in self.blocks:
+
+            if block.left == thisBlock.left:
+
+                return self.getNewBlock(blocksTried)
+        
+        for block in blocksTried:
+
+            if block == thisBlock:
+
+                return self.getNewBlock(blocksTried)
+        
+        return thisBlock
+    
+    def blockConnected(self, fromBlock, toBlock):
+
+        return (abs(fromBlock.left - toBlock.left) // self.blockWidth < 6
+                and (toBlock.level <= fromBlock.level + 1))
+
+    def blockIsReachebleHelper(self, startBlock, endBlock):
+
+        visited = []
+
+        val = self.blockIsReachable(startBlock, endBlock, visited)
+
+        return val
+
+    def blockIsReachable(self, currBlock, finalBlock, visited):
+
+        for block in visited:
+
+            if currBlock == block:
+
+                return False
+        
+        visited.append(currBlock)
+
+        if currBlock == finalBlock or self.blockConnected(currBlock, finalBlock): return True
+
+        for block in self.blocks:
+
+            if block == currBlock or block == finalBlock: continue
+
+            if (self.blockConnected(currBlock, block) 
+                    and self.blockIsReachable(block, finalBlock, visited)):
+                
+                return True
+        
+        return False
+
+    def completeLevel(self):
+
+        blocksTried = []
+
+        while len(blocksTried) < 10:
+
+            newBlock = self.getNewBlock(blocksTried)
+
+            self.blocks.append(newBlock)
+
+            if self.blockIsReachebleHelper(self.startPos, newBlock):
+
+                if self.blockIsReachebleHelper(self.startPos, self.finalBlock):
+
+                    return True
+                
+                else:
+
+                    if self.completeLevel():
+
+                        return True
+        
+            blocksTried.append(newBlock)
+            self.blocks.remove(newBlock)
+        
+        return False
+
+
+    
+    def scrollBlocks(self, xVelocity):
+
+        for block in self.blocks:
+            block.scrollBlock(xVelocity)
+    
+    def drawBlocks(self, canvas):
+
+        for block in self.blocks:
+            block.drawBlock(canvas)
+    
+    def collided(self, top, right, bottom, left, xVelocity, yVelocity):
+        
+        for block in self.blocks:
+            collision = block.collided(top, right, bottom, left, xVelocity, yVelocity)
+            if collision[0]:
+                return collision
+        
+        return (False, None, None)
+
+
+class Block(object):
+
+    block = None
+    blockWidth = 0
+
+    def __init__(self, app, blockWidth, level, left):
+
+        if Block.block == None:
+            Block.block = (app.loadImage('./assets/images/tiles.png')
+                                        .crop((16, 0, 32, 16))
+                                        .resize((blockWidth, blockWidth)))
+        if Block.blockWidth == 0:
+            Block.blockWidth = blockWidth
+        
+        self.level = level
+        self.top = app.height - blockWidth * 2 - blockWidth * 4 * level
+        self.left = left
+    
+    def collided(self, top, right, bottom, left, xVelocity, yVelocity):
+
+        if xVelocity != 0 and (top > self.top - Block.blockWidth and bottom < self.top):
+
+            if right < self.left and right + xVelocity > self.left:
+                return (True, "right", self.left)
+            elif left > self.left + Block.blockWidth and left + xVelocity < self.left + Block.blockWidth:
+                return (True, "left", self.left + Block.blockWidth)
+        
+        if yVelocity != 0 and (right > self.left and left < self.left + Block.blockWidth):
+
+            if top > self.top + Block.blockWidth and top - yVelocity < self.top + Block.blockWidth:
+                return (True, "top", self.top + Block.blockWidth)
+            elif bottom < self.top and bottom + yVelocity > self.top:
+                return (True, "bottom", self.top)
+        
+        return (False, 0, 0)
+    
+    def __eq__(self, other):
+
+        return (isinstance(other, Block) and self.level == other.level
+                and self.left == other.left)
+    
+    def scrollBlock(self, xVelocity):
+
+        self.left -= xVelocity
+    
+    def drawBlock(self, canvas):
+
+        cx = self.left + Block.blockWidth / 2
+        cy = self.top + Block.blockWidth / 2
+
+        canvas.create_image(cx, cy, 
+                                image=ImageTk.PhotoImage(Block.block))
+
 ###################
 #  Survival Map
 ###################
@@ -341,32 +576,52 @@ class Survival(object):
     def __init__(self, app):
 
         self.app = app
+
+        self.leftShift = 0
+
+        self.maxWidth = 1920
         
         # Sets left and right margin for when map scrolls
         self.margin = 150
 
+        # Sets width and height of blocks to be 32
+        self.blockDimension = 32
+
         # Sets up the ground blocks
-        self.groundBlocks = GroundBlocks(app)
+        self.groundBlocks = GroundBlocks(app, self.blockDimension)
 
         # Ground height
-        self.level0 = app.height - self.groundBlocks.blockWidth * 2
+        self.level0 = app.height - self.blockDimension * 2
 
         # Sets up the clouds
         self.clouds = Clouds(app)
+        
+        # Sets up the blocks
+        self.blocks = Blocks(app, self.blockDimension, self.maxWidth)
 
     # Checks if character is going to be in the right margin of map
     def inRightMargin(self, right, xVelocity):
-        return right + xVelocity > self.app.width - self.margin
+        return self.leftShift + self.app.width < self.maxWidth and right + xVelocity > self.app.width - self.margin
 
     # Checks if character is going to be in the left margin of map
     def inLeftMargin(self, left, xVelocity):
-        return left + xVelocity < self.margin
+        return self.leftShift > 0 and left + xVelocity < self.margin
+    
+
+    def collided(self, top, right, bottom, left, xVelocity, yVelocity):
+
+        return self.blocks.collided(top, right, bottom, left, xVelocity, yVelocity)
 
     # Scrolls the map by xVelocity
     def scrollMap(self, xVelocity):
 
+        self.leftShift += xVelocity
+
         # Scrolls the ground blocks
         self.groundBlocks.scrollBlocks(xVelocity)
+
+        # Scrolls the blocks
+        self.blocks.scrollBlocks(xVelocity)
 
         # Moves the clouds
         self.clouds.moveClouds(xVelocity)
@@ -378,6 +633,7 @@ class Survival(object):
                                 fill="#5c94fc")
         self.clouds.drawClouds(canvas)
         self.groundBlocks.drawBlocks(canvas)
+        self.blocks.drawBlocks(canvas)
 
 # Draws everything in survival mode
 def survival_redrawAll(app, canvas):
@@ -394,11 +650,11 @@ def survival_timerFired(app):
     # Jump if mario should be jumping
     if app.mario.yMotion != 0 or app.mario.yVelocity != 0:
         app.mario.jump(app.map)
+    
+    app.mario.fall(app.map)
 
 # Controller
 def survival_keyPressed(app, event):
-
-    print("key pressed")
 
     if event.key == 'Right':
 
@@ -425,8 +681,6 @@ def survival_keyPressed(app, event):
 
 # Released motion for x
 def survival_keyReleased(app, event):
-
-    print("key released")
 
     if event.key == 'Right' or event.key == 'Left':
         
@@ -459,6 +713,7 @@ def titleScreen_keyPressed(app, event):
         app.mode = "survival"
         app.map = Survival(app)
         Mario.initialize(app)
-        app.mario = Mario(80, 385)
+        # app.mario = Mario(80, 385)
+        app.mario = Mario(160, app.height - 217)
 
 runApp(width=1280, height=480)
