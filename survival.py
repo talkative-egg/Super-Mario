@@ -398,7 +398,7 @@ class Blocks(object):
         self.blocks = []
 
         for i in range(6, 10):
-            self.blocks.append(Block(app, blockWidth, 1, blockWidth * i, 5, i - 4))
+            self.blocks.append(Block(app, blockWidth, 1, blockWidth * i, 5, i - 5))
 
         self.startPos = Block(app, blockWidth, 1, blockWidth * 5, 5, 0)
 
@@ -422,7 +422,7 @@ class Blocks(object):
     def getNewBlock(self, blocksTried, length):
 
         level = random.randint(1, 4)
-        leftPosition = random.randint(0, self.maxBlocks)
+        leftPosition = random.randint(0, self.maxBlocks - 1)
 
         thisBlock = Block(self.app, self.blockWidth, level, self.blockWidth * leftPosition, length, 0)
 
@@ -501,7 +501,13 @@ class Blocks(object):
             newBlocks = [newBlock]
 
             for i in range(numOfBlocks):
-                newBlocks.append(Block(self.app, self.blockWidth, newBlock.level, newBlock.left + self.blockWidth * (i + 1), numOfBlocks, i + 1))
+
+                block = Block(self.app, self.blockWidth, newBlock.level, newBlock.left + self.blockWidth * (i + 1), numOfBlocks, i + 1)
+
+                if block in self:
+                    break
+
+                newBlocks.append(block)
 
             self.blocks = self.blocks + newBlocks
 
@@ -544,6 +550,15 @@ class Blocks(object):
                 return collision
         
         return (False, None, None)
+    
+    def __contains__(self, newBlock):
+
+        for block in self.blocks:
+
+            if block == newBlock:
+                return True
+
+        return False
 
 
 class Block(object):
@@ -573,8 +588,8 @@ class Block(object):
     
     def addGoomba(self):
 
-        if self.length >= 3 and self.index == 0 and random.random() <= 0.7:
-            self.goomba = Goomba(self.top - Goomba.height, self.left)
+        if self.length >= 3 and self.index == 0 and random.random() <= 0.6:
+            self.goomba = Goomba(self.top - Goomba.height, self.left, self.length)
             self.app.goombas.append(self.goomba)
     
     def collided(self, top, right, bottom, left, xVelocity, yVelocity):
@@ -629,18 +644,37 @@ class Goomba(object):
                                         .crop((0, 4, 16, 20))
                                         .resize((Goomba.width, Goomba.height)))
         sprite2 = (app.loadImage('./assets/images/enemies.png')
-                                        .crop((20, 4, 36, 20))
+                                        .crop((32, 4, 45, 20))
                                         .resize((Goomba.width, Goomba.height)))
         Goomba.sprites.append(sprite1)
         Goomba.sprites.append(sprite2)
     
-    def __init__(self, top, left):
+    def __init__(self, top, left, length):
         self.top = top
         self.left = left
         self.sprite = 0
+        self.moved = 0
+        self.length = length
+        self.moveRight = True
 
     def scrollGoomba(self, xVelocity):
         self.left -= xVelocity
+
+    def moveGoomba(self):
+        
+        if self.moveRight == True and self.moved < self.length * Block.blockWidth:
+            self.left += 10
+            self.moved += 10
+        else:
+            self.moveRight = False
+        
+        if self.moveRight == False and self.moved > 0:
+            self.left -= 10
+            self.moved -= 10
+        else:
+            self.moveRight = True
+        
+        self.sprite = 0 if self.sprite == 1 else 1
     
     def drawGoomba(self, canvas):
 
@@ -744,6 +778,14 @@ def survival_timerFired(app):
     
     app.mario.fall(app.map)
 
+    app.goombaTimer += app.timerDelay
+
+    if app.goombaTimer > 150:
+
+        for goomba in app.goombas:
+            goomba.moveGoomba()
+        app.goombaTimer %= 150
+
 # Controller
 def survival_keyPressed(app, event):
 
@@ -811,5 +853,6 @@ def titleScreen_keyPressed(app, event):
 
         Goomba.initialize(app)
         # app.goombas.append(Goomba(200, 400))
+        app.goombaTimer = 0
 
 runApp(width=1280, height=480)
