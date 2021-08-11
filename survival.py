@@ -41,7 +41,7 @@ class Mario(object):
             Mario.sprites.append(sprite)
 
     # Construtor, takes in the initial position of mario
-    def __init__(self, left, top):
+    def __init__(self, left, top, app):
 
         # Sprites sets off to be the 
         self.spriteX = 6
@@ -64,6 +64,8 @@ class Mario(object):
         self.facingRight = True
 
         self.level = 0
+
+        self.app = app
 
     # Moves mario to the right by xVelocity amount
     def moveRight(self, app):
@@ -190,6 +192,11 @@ class Mario(object):
                 self.moveRight(app)
             elif self.xVelocity < 0:
                 self.moveLeft(app)
+        
+        for goomba in app.goombas:
+            goomba.kill(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
+        
+        app.map.blocks.eatMushroom(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
 
     def fall(self, map):
 
@@ -259,6 +266,11 @@ class Mario(object):
                 self.top = collided[2] - Mario.height
 
             return
+        
+        for goomba in self.app.goombas:
+            goomba.kill(self.top, self.left + Mario.width, self.top + Mario.height, self.left, self.yVelocity)
+        
+        self.app.map.blocks.eatMushroom(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
     
     # Draws current frame of mario
     def drawMario(self, canvas):
@@ -405,7 +417,7 @@ class Blocks(object):
         self.blocks.append(self.startPos)
 
         for i in range(0, 5):
-            self.blocks.append(Block(app, blockWidth, 2, mapWidth - blockWidth * i, 5, 4 - i))
+            self.blocks.append(Block(app, blockWidth, 2, mapWidth - blockWidth * i, 5, 5 - i))
 
         self.finalBlock = Block(app, blockWidth, 2, mapWidth - blockWidth * 5, 5, 0)
         
@@ -417,6 +429,12 @@ class Blocks(object):
         for block in self.blocks:
             if block == self.startPos or block == self.finalBlock: continue
             block.addGoomba()
+
+    def eatMushroom(self, top, right, bottom ,left):
+
+        for block in self.blocks:
+            if isinstance(block, MushroomBlock):
+                block.eatMushroom(top, right, bottom ,left)
     
 
     def getNewBlock(self, blocksTried, length):
@@ -502,7 +520,10 @@ class Blocks(object):
 
             for i in range(numOfBlocks):
 
-                block = Block(self.app, self.blockWidth, newBlock.level, newBlock.left + self.blockWidth * (i + 1), numOfBlocks, i + 1)
+                if random.random() <= 0.85:
+                    block = Block(self.app, self.blockWidth, newBlock.level, newBlock.left + self.blockWidth * (i + 1), numOfBlocks, i + 1)
+                else:
+                    block = MushroomBlock(self.app, self.blockWidth, newBlock.level, newBlock.left + self.blockWidth * (i + 1), numOfBlocks, i + 1)
 
                 if block in self:
                     break
@@ -575,6 +596,7 @@ class Block(object):
         if Block.blockWidth == 0:
             Block.blockWidth = blockWidth
         
+        self.block = Block.block
         self.level = level
         self.top = app.height - blockWidth * 2 - blockWidth * 3 * level
         self.left = left
@@ -588,8 +610,8 @@ class Block(object):
     
     def addGoomba(self):
 
-        if self.length >= 3 and self.index == 0 and random.random() <= 0.6:
-            self.goomba = Goomba(self.top - Goomba.height, self.left, self.length)
+        if self.length >= 3 and self.index == 0 and random.random() <= 0.5:
+            self.goomba = Goomba(self.top - Goomba.height, self.left, self.length, self.app)
             self.app.goombas.append(self.goomba)
     
     def collided(self, top, right, bottom, left, xVelocity, yVelocity):
@@ -627,10 +649,122 @@ class Block(object):
         cy = self.top + Block.blockWidth / 2
 
         canvas.create_image(cx, cy, 
-                                image=ImageTk.PhotoImage(Block.block))
-        canvas.create_text(cx, cy, text=f"{self.index}", fill="white")
+                                image=ImageTk.PhotoImage(self.block))
+        # canvas.create_text(cx, cy, text=f"{self.index}", fill="white")
 
+class MushroomBlock(Block):
 
+    mushroomBlock = None
+    popedBlock = None
+
+    def __init__(self, app, blockWidth, level, left, length, index):
+        super().__init__(app, blockWidth, level, left, length, index)
+        self.hasMushroom = True
+        MushroomBlock.mushroomBlock = (app.loadImage('./assets/images/tiles.png')
+                                        .crop((368, 0, 384, 16))
+                                        .resize((blockWidth, blockWidth)))
+        self.block = MushroomBlock.mushroomBlock
+        MushroomBlock.popupBlock = (app.loadImage('./assets/images/tiles.png')
+                                        .crop((416, 0, 432, 16))
+                                        .resize((blockWidth, blockWidth)))
+        self.mushroom = None
+    
+    def collided(self, top, right, bottom, left, xVelocity, yVelocity):
+
+        if xVelocity != 0 and (top > self.top - Block.blockWidth and bottom < self.top):
+
+            if right < self.left + Block.blockWidth and right - xVelocity > self.left:
+                return (True, "right", self.left)
+            elif left > self.left and left - xVelocity < self.left + Block.blockWidth:
+                return (True, "left", self.left + Block.blockWidth)
+        
+        if yVelocity != 0 and (right > self.left and left < self.left + Block.blockWidth):
+
+            if top > self.top and top - yVelocity < self.top + Block.blockWidth:
+                self.popMushroom()
+                return (True, "top", self.top + Block.blockWidth)
+            elif bottom < self.top + Block.blockWidth and bottom + yVelocity > self.top:
+                return (True, "bottom", self.top)
+        
+        return (False, 0, 0)
+
+    def scrollBlock(self, xVelocity):
+
+        self.left -= xVelocity
+
+        if self.mushroom != None:
+            self.mushroom.scrollMushroom(xVelocity)
+    
+    def popMushroom(self):
+
+        self.block = MushroomBlock.popupBlock
+        self.mushroom = Mushroom(self.top - Mushroom.height, self.left, self.app)
+    
+    def eatMushroom(self, top, right, bottom, left):
+
+        if self.mushroom == None: return
+
+        if self.mushroom.eatMushroom(top, right, bottom, left):
+            self.mushroom = None
+            self.app.lives += 1
+
+    def drawBlock(self, canvas):
+
+        if self.left > self.app.width + self.app.map.leftShift: return
+
+        cx = self.left + Block.blockWidth / 2
+        cy = self.top + Block.blockWidth / 2
+
+        canvas.create_image(cx, cy, 
+                                image=ImageTk.PhotoImage(self.block))
+        
+        if self.mushroom != None:
+            self.mushroom.drawMushroom(canvas)
+
+class Mushroom(object):
+
+    image = None
+    width = 32
+    height = 32
+
+    @staticmethod
+    def initialize(app):
+        Mushroom.image = (app.loadImage('./assets/images/items.png')
+                                        .crop((214, 34, 230, 50))
+                                        .resize((32, 32)))
+    
+    def __init__(self, top, left, app):
+        self.top = top
+        self.left = left
+        self.app = app
+
+    def drawMushroom(self, canvas):
+
+        cx = self.left + Mushroom.width / 2
+        cy = self.top + Mushroom.height / 2
+
+        canvas.create_image(cx, cy, 
+                                image=ImageTk.PhotoImage(Mushroom.image))
+    
+    def eatMushroom(self, top, right, bottom, left):
+
+        if (top > self.top - Mushroom.height and bottom < self.top):
+
+            if right < self.left + Mushroom.width and right > self.left:
+                return True
+            elif left > self.left and left < self.left + Mushroom.width:
+                return True
+
+        elif (right > self.left and left < self.left + Mushroom.width):
+
+            if top > self.top and top < self.top + Mushroom.height:
+                return True
+            elif bottom < self.top + Mushroom.height and bottom > self.top:
+                return True
+        return False
+    
+    def scrollMushroom(self, xVelocity):
+        self.left -= xVelocity
 
 class Goomba(object):
 
@@ -641,26 +775,35 @@ class Goomba(object):
     def initialize(app):
 
         sprite1 = (app.loadImage('./assets/images/enemies.png')
-                                        .crop((0, 4, 16, 20))
+                                        .crop((0, 16, 16, 32))
                                         .resize((Goomba.width, Goomba.height)))
         sprite2 = (app.loadImage('./assets/images/enemies.png')
-                                        .crop((32, 4, 45, 20))
+                                        .crop((16, 16, 32, 32))
                                         .resize((Goomba.width, Goomba.height)))
+        sprite3 = (app.loadImage('./assets/images/enemies.png')
+                                        .crop((32, 24, 48, 32))
+                                        .resize((Goomba.width, 16)))
         Goomba.sprites.append(sprite1)
         Goomba.sprites.append(sprite2)
+        Goomba.sprites.append(sprite3)
     
-    def __init__(self, top, left, length):
+    def __init__(self, top, left, length, app):
         self.top = top
         self.left = left
         self.sprite = 0
         self.moved = 0
         self.length = length
         self.moveRight = True
+        self.app = app
 
     def scrollGoomba(self, xVelocity):
         self.left -= xVelocity
 
     def moveGoomba(self):
+
+        if self.sprite == 2:
+            self.app.goombas.remove(self)
+            return
         
         if self.moveRight == True and self.moved < self.length * Block.blockWidth:
             self.left += 10
@@ -675,11 +818,31 @@ class Goomba(object):
             self.moveRight = True
         
         self.sprite = 0 if self.sprite == 1 else 1
+
+        self.kill(self.app.mario.top, self.app.mario.left + Mario.width,
+                        self.app.mario.top + Mario.height, self.app.mario.left)
+    
+    def kill(self, top, right, bottom, left, yVelocity = 0):
+
+        if (right > self.left and left < self.left + Goomba.width
+                and bottom < self.top and bottom + yVelocity > self.top):
+            
+            self.sprite = 2
+        
+        elif (top < self.top + Goomba.height and bottom > self.top
+                and right > self.left and left < self.left + Goomba.width
+                and self.sprite != 2):
+
+            decrementLife(self.app)
     
     def drawGoomba(self, canvas):
 
         cx = self.left + Goomba.width / 2
-        cy = self.top + Goomba.height / 2
+
+        if self.sprite == 2:
+            cy = self.top + Goomba.height * 3 / 4
+        else:
+            cy = self.top + Goomba.height / 2
 
         canvas.create_image(cx, cy, 
                                 image=ImageTk.PhotoImage(Goomba.sprites[self.sprite]))
@@ -764,9 +927,26 @@ def survival_redrawAll(app, canvas):
     app.mario.drawMario(canvas)
     for goomba in app.goombas:
         goomba.drawGoomba(canvas)
+    
+    canvas.create_text(app.width - 10, 10, text = f"Lives: {app.lives}",
+                        anchor="ne", fill = "white", font="Helvetica 30")
+
+def decrementLife(app):
+
+    app.mario = Mario(160, app.height - 188, app)
+    app.mario.jump(app.map)
+
+    app.goombaTimer = 0
+
+    app.lives -= 1
+
+    if app.lives <= 0:
+        app.gameOver = True
 
 # Controller
 def survival_timerFired(app):
+
+    if app.gameOver: return
 
     # Moves if mario should be moving
     if app.mario.xMotion != 0 or app.mario.xVelocity != 0:
@@ -788,6 +968,18 @@ def survival_timerFired(app):
 
 # Controller
 def survival_keyPressed(app, event):
+
+    if event.key == 'r':
+        app.goombas = []
+        app.gameOver = False
+        app.mode = "survival"
+        app.map = Survival(app)
+        Mario.initialize(app)
+        app.mario = Mario(160, app.height - 188, app)
+        app.mario.jump(app.map)
+
+        Goomba.initialize(app)
+        app.goombaTimer = 0
 
     if event.key == 'Right':
 
@@ -845,10 +1037,15 @@ def titleScreen_keyPressed(app, event):
     if event.key == "Left":
         app.mode = "classic"
     elif event.key == "Right":
+        app.lives = 3
+        app.gameOver = False
         app.mode = "survival"
+
+        Mushroom.initialize(app)
+
         app.map = Survival(app)
         Mario.initialize(app)
-        app.mario = Mario(160, app.height - 188)
+        app.mario = Mario(160, app.height - 188, app)
         app.mario.jump(app.map)
 
         Goomba.initialize(app)
