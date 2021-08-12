@@ -1,7 +1,26 @@
 # Graphics module from https://www.cs.cmu.edu/~112/notes/cmu_112_graphics.py
 from cmu_112_graphics import *
 
-import math, random
+import math, random, time
+
+from datetime import date
+
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import db
+
+# Fetch the service account key JSON file contents
+cred = credentials.Certificate('./super-mario-13ae1-firebase-adminsdk-b2cig-836ef16a5a.json')
+
+# Initialize the app with a service account, granting admin privileges
+firebase_admin.initialize_app(cred, {
+    'databaseURL': 'https://super-mario-13ae1-default-rtdb.firebaseio.com/'
+})
+
+# As an admin, the app has access to read and write all data, regradless of Security Rules
+ref = db.reference('/')
+
+# users_ref = ref.child('highScores')
 
 # Distance formula, helper function
 def distance(x0, y0, x1, y1):
@@ -976,8 +995,10 @@ def survival_redrawAll(app, canvas):
     for goomba in app.goombas:
         goomba.drawGoomba(canvas)
     
-    canvas.create_text(app.width - 10, 10, text = f"Lives: {app.lives}",
-                        anchor="ne", fill = "white", font="Helvetica 30")
+    canvas.create_text(app.width - 10, 10, text=f"Lives: {app.lives}",
+                        anchor="ne", fill="white", font="Helvetica 30")
+    canvas.create_text(10, 10, text = f"Time: {app.time}s",
+                        anchor="nw", fill="white", font="Helvetica 30")
     
     if app.gameOver:
         drawGameOver(app, canvas)
@@ -988,6 +1009,7 @@ def decrementLife(app):
 
     if app.lives <= 0:
         app.gameOver = True
+        gameOver(app)
         return
 
     app.map.reset()
@@ -996,23 +1018,111 @@ def decrementLife(app):
 
     app.goombaTimer = 0
 
+def gameOver(app):
+
+    app.leaderboard = list(ref.get()["highScores"])
+
+    if app.lives > 0:
+        app.leaderboard.append([app.name, app.time])
+        app.leaderboard = mergeSort(app.leaderboard)
+
+        if len(app.leaderboard) > 10:
+            app.leaderboard = app.leaderboard[:10]
+
+        ref.set({
+            "highScores": app.leaderboard
+        })
+
+def merge(L1, L2):
+
+    index1 = 0
+    index2 = 0
+    newL = []
+
+    while index1 < len(L1) and index2 < len(L2):
+
+        if L1[index1][1] < L2[index2][1]:
+            newL.append(L1[index1])
+            index1 += 1
+        else:
+            newL.append(L2[index2])
+            index2 += 1
+    
+    return newL + L1[index1:] + L2[index2:]
+
+def mergeSort(L):
+
+    if len(L) == 1 or L == []:
+
+        return L
+    
+    else:
+
+        middleIndex = len(L) // 2
+
+        left = mergeSort(L[:middleIndex])
+        right = mergeSort(L[middleIndex:])
+
+        return merge(left, right)
+
 def drawGameOver(app, canvas):
 
     if(app.lives > 0):
-        canvas.create_text(app.width / 2, app.height / 2,
+        canvas.create_text(app.width / 2, 10,
                             text = "YOU WIN!!",
                             font = "Helvetica 50",
-                            fill = "white")
+                            fill = "white",
+                            anchor = "n")
     else:
-        canvas.create_text(app.width / 2, app.height / 2,
+        canvas.create_text(app.width / 2, 10,
                             text = "YOU LOSE",
                             font = "Helvetica 50",
+                            fill = "white",
+                            anchor = "n")
+    drawLeaderboard(app, canvas)
+
+def drawLeaderboard(app, canvas):
+
+    canvas.create_rectangle(app.width / 4, app.height / 6,
+                            app.width * 3 / 4, app.height * 5 / 6,
                             fill = "white")
+    canvas.create_text(app.width / 2, app.height / 6 + 10,
+                       text = "Leaderboard",
+                       font="Helvetica 30",
+                       fill = "black",
+                       anchor = "n")
+    for i in range(10):
+
+        if i < len(app.leaderboard):
+
+            canvas.create_text(app.width / 4 + 20, app.height / 6 + 20 + 30 * (i + 1),
+                           text = f"{i + 1}:   {app.leaderboard[i][0]}",
+                           font = "Helvetica 25",
+                           fill = "black",
+                           anchor = "nw")
+
+            canvas.create_text(app.width * 3 / 4 - 20, app.height / 6 + 20 + 30 * (i + 1),
+                           text = f"{app.leaderboard[i][1]}s",
+                           font = "Helvetica 25",
+                           fill = "black",
+                           anchor = "ne")
+
+        else:
+            canvas.create_text(app.width / 4 + 20, app.height / 6 + 20 + 30 * (i + 1),
+                           text = f"{i + 1}:",
+                           font = "Helvetica 25",
+                           fill = "black",
+                           anchor = "nw")
+
+        
+    
 
 # Controller
 def survival_timerFired(app):
 
     if app.gameOver: return
+
+    app.time = int(time.time() - app.timer)
 
     # Moves if mario should be moving
     if app.mario.xMotion != 0 or app.mario.xVelocity != 0:
@@ -1036,21 +1146,28 @@ def survival_timerFired(app):
             and app.mario.top >= app.height - Block.blockWidth * 2 - Block.blockWidth * 3 * 2 - Mario.height):
         
         app.gameOver = True
+        gameOver(app)
 
 # Controller
 def survival_keyPressed(app, event):
 
     if event.key == 'r':
-        app.goombas = []
-        app.gameOver = False
-        app.mode = "survival"
-        app.map = Survival(app)
-        Mario.initialize(app)
-        app.mario = Mario(160, app.height - 188, app)
-        app.mario.jump(app.map)
+        # app.goombas = []
+        # app.gameOver = False
+        # app.mode = "survival"
+        # app.map = Survival(app)
+        # Mario.initialize(app)
+        # app.mario = Mario(160, app.height - 188, app)
+        # app.mario.jump(app.map)
+        # app.lives = 3
 
-        Goomba.initialize(app)
-        app.goombaTimer = 0
+        # Goomba.initialize(app)
+        # app.goombaTimer = 0
+
+        # app.timer = time.time()
+        # app.time = 0
+        app.mode = "namePrompt"
+        app.name = ""
 
     if event.key == 'Right':
 
@@ -1086,25 +1203,41 @@ def survival_keyReleased(app, event):
 def appStarted(app):
 
     # Starts off in title screen
+
     app.mode = "titleScreen"
     app.timerDelay = 20
 
     app.goombas = []
 
-# Draws title screen
-def titleScreen_redrawAll(app, canvas):
+def namePrompt_redrawAll(app, canvas):
 
     canvas.create_rectangle(0, 0, app.width, app.height, fill="#5c94fc")
-    canvas.create_text(app.width / 2, app.height / 3,
-                       text = "Super Mario Bros!", font = "Helvetica 50")
-    canvas.create_text(app.width / 2, app.height * 2 / 3,
-                       text = "Press Right Arrow to play start",
-                       font = "Helvetica 30")
+    canvas.create_text(app.width / 2, app.height / 4,
+                        text = "Please enter your name",
+                        fill = "white",
+                        font = "Helvetica 50")
+    canvas.create_text(app.width / 2, app.height / 4 + 50,
+                        text = "Press enter to finish",
+                        fill = "white",
+                        font = "Helvetica 30")
+    canvas.create_rectangle(app.width / 3, app.height * 3 / 7,
+                            app.width * 2 / 3, app.height * 4 / 7,
+                            fill = "white")
+    canvas.create_text(app.width / 2, app.height / 2,
+                       fill = "black",
+                       font = "Helvetica 35",
+                       text = app.name)
 
-# Goes into different modes when keys pressed
-def titleScreen_keyPressed(app, event):
+def namePrompt_keyPressed(app, event):
 
-    if event.key == "Right":
+    keywords = ["Tab", "Delete", "Escape", "Up", "Right", "Down", "Left"]
+
+    if event.key == "Delete" and len(app.name) > 0:
+        app.name = app.name[:-1]
+    elif event.key == "Enter" and not app.name.isspace():
+
+        app.goombas = []
+
         app.lives = 3
         app.gameOver = False
         app.mode = "survival"
@@ -1119,5 +1252,30 @@ def titleScreen_keyPressed(app, event):
         Goomba.initialize(app)
         # app.goombas.append(Goomba(200, 400))
         app.goombaTimer = 0
+        app.timer = time.time()
+        app.time = 0
+        app.leaderboard = ref.get()["highScores"]
 
-runApp(width=1280, height=480)
+    elif event.key == "Space":
+        app.name += " "
+    elif event.key not in keywords and len(app.name) < 20:
+        app.name += event.key
+
+# Draws title screen
+def titleScreen_redrawAll(app, canvas):
+
+    canvas.create_rectangle(0, 0, app.width, app.height, fill="#5c94fc")
+    canvas.create_text(app.width / 2, app.height / 3,
+                       text = "Super Mario Bros!", font = "Helvetica 50")
+    canvas.create_text(app.width / 2, app.height * 2 / 3,
+                       text = "Press Space to Start",
+                       font = "Helvetica 30")
+
+# Goes into different modes when keys pressed
+def titleScreen_keyPressed(app, event):
+
+    if event.key == "Space":
+        app.mode = "namePrompt"
+        app.name = ""
+
+runApp(width=1280, height=576)
