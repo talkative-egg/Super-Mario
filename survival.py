@@ -63,21 +63,10 @@ class Mario(object):
         # Used for sprites
         self.facingRight = True
 
-        self.level = 0
-
         self.app = app
 
     # Moves mario to the right by xVelocity amount
     def moveRight(self, app):
-
-        # collided = app.map.collided(self.top, self.left + Mario.width,
-        #                     self.top + Mario.height, self.left,
-        #                     self.xVelocity, self.yVelocity)
-
-        # if collided[0] and collided[1] == "left":
-        #     self.xVelocity = 0
-        #     self.left = collided[2] - Mario.width
-        #     return
 
         # Sets the initial sprite to right if it weren't
         if(self.spriteX < len(Mario.sprites) // 2 + 1):
@@ -101,15 +90,6 @@ class Mario(object):
     
     # Moves mario to the left by -xVelocity amout
     def moveLeft(self, app):
-
-        # collided = app.map.collided(self.top, self.left + Mario.width,
-        #                     self.top + Mario.height, self.left,
-        #                     self.xVelocity, self.yVelocity)
-
-        # if collided[0] and collided[1] == "right":
-        #     self.xVelocity = 0
-        #     self.left = collided[2]
-        #     return
 
         # Sets initial sprite to left if it weren't
         if(self.spriteX >= len(Mario.sprites) // 2 + 1):
@@ -193,21 +173,26 @@ class Mario(object):
             elif self.xVelocity < 0:
                 self.moveLeft(app)
         
+        # Check if mario can kill a goomba or if goomba kills mario
         for goomba in app.goombas:
             goomba.kill(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
         
+        # Check if mario eats a mushroom
         app.map.blocks.eatMushroom(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
 
     def fall(self, map):
 
+        # If mario is jumping, then it's not falling
         if self.yMotion == 1: return
 
+        # Check if there is anything below mario
         collided = map.collided(self.top, self.left + Mario.width,
                             self.top + Mario.height, self.left,
                             0, 5)
 
-        if not collided[0] and self.top < map.height - 89:
-            if self.yVelocity == 0:
+        # If there is nothing below mario and mario is not already falling, then fall!
+        if not collided[0] and self.top < map.height - 89 and self.yVelocity == 0:
+
                 self.yMotion = 0
                 self.yVelocity = 5
 
@@ -225,7 +210,7 @@ class Mario(object):
             and self.top + self.yVelocity > map.level0 - Mario.height):
 
             self.top = map.level0 - Mario.height
-            self.yVelocity = 0
+            decrementLife(self.app)
 
         # If character is falling, increase top margin by yVelocity
         # Then increase falling speed by 1.25 times
@@ -247,16 +232,20 @@ class Mario(object):
 
             self.yMotion = 0
         
+        # Check if Mario is colliding with blocks
         collided = map.collided(self.top, self.left + Mario.width,
                             self.top + Mario.height, self.left,
                             self.xVelocity, self.yVelocity)
 
+        # collided[0] is a boolean, True if collided
         if collided[0]:
 
+            # If collided with blocks on the top, then fall
             if collided[1] == "top":
                 
                 self.yMotion = 0
 
+            # If collided with something on the bottom, then stop falling
             elif collided[1] == "bottom":
 
                 self.yVelocity = 0
@@ -267,9 +256,11 @@ class Mario(object):
 
             return
         
+        # Check if mario kills any of the goombas
         for goomba in self.app.goombas:
             goomba.kill(self.top, self.left + Mario.width, self.top + Mario.height, self.left, self.yVelocity)
         
+        # Check if mario can eat any mushroom
         self.app.map.blocks.eatMushroom(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
     
     # Draws current frame of mario
@@ -298,6 +289,13 @@ class Clouds(object):
         self.clouds = []
         self.cloudDimensions = (64, 48)
         self.initializeClouds()
+    
+    # Resets cloud to initial position
+    def reset(self, leftShift):
+
+        leftShift = leftShift % self.app.width
+        
+        self.moveClouds(-leftShift)
 
     # Checks if a new cloud is too close to any of the previous ones
     def cloudsInRange(self, newX, newY):
@@ -338,13 +336,9 @@ class Clouds(object):
             cx = int(cx - xVelocity)
 
             # If clouds out of range, set the cloud to be on the other side of screen
-            if cx + self.cloudDimensions[0] / 2 < 0:
+            if cx + self.cloudDimensions[0] / 2 < 0 or cx - self.cloudDimensions[0] / 2 > self.app.width:
 
-                cx = int(self.app.width)
-            
-            elif cx - self.cloudDimensions[0] / 2 > self.app.width:
-
-                cx = 0
+                cx = cx % self.app.width
 
             newClouds.append((cx, cy))
 
@@ -372,9 +366,9 @@ class GroundBlocks(object):
         self.leftShift = 0
 
         # images from http://www.mariouniverse.com/sprites-nes-smb/
-        self.groundBlock = (app.loadImage('./assets/images/tiles.png')
-                                        .crop((0, 0, 16, 16))
-                                        .resize((blockWidth, blockWidth)))
+        self.fire = (app.loadImage('./assets/images/tiles.png')
+                                        .crop((48, 384, 64, 416))
+                                        .resize((32, 64)))
         
         # Width of ground block
         self.blockWidth = blockWidth
@@ -384,18 +378,16 @@ class GroundBlocks(object):
         self.leftShift += xVelocity
         self.leftShift = self.leftShift % self.blockWidth
     
-    # Draws the ground blocks
+    # Draws the fire
     def drawBlocks(self, canvas):
 
         cols = math.ceil(self.app.width / self.blockWidth) + 1
-        rows = 2
-
-        for row in range(rows):
-            for col in range(cols):
-                cx = self.blockWidth * (col) + 16 - self.leftShift
-                cy = self.app.height - row * self.blockWidth - 16
-                canvas.create_image(cx, cy, 
-                                image=ImageTk.PhotoImage(self.groundBlock))
+        
+        for col in range(cols):
+            cx = self.blockWidth * (col) + 16 - self.leftShift
+            cy = self.app.height - 32
+            canvas.create_image(cx, cy, 
+                                image=ImageTk.PhotoImage(self.fire))
 
 
 class Blocks(object):
@@ -409,34 +401,45 @@ class Blocks(object):
 
         self.blocks = []
 
+        # Add the starting block
+        self.startPos = Block(app, blockWidth, 1, blockWidth * 5, 5, 0)
+        self.blocks.append(self.startPos)
+
+        # Add the blocks next to starting block
         for i in range(6, 10):
             self.blocks.append(Block(app, blockWidth, 1, blockWidth * i, 5, i - 5))
 
-        self.startPos = Block(app, blockWidth, 1, blockWidth * 5, 5, 0)
+        # Add the final block where if mario reaches this block, game win
+        self.finalBlock = Block(app, blockWidth, 2, mapWidth - blockWidth * 5, 5, 0)
+        self.blocks.append(self.finalBlock)
 
-        self.blocks.append(self.startPos)
-
+        # Add blocks next to final block for aesthetic purposes
         for i in range(0, 5):
             self.blocks.append(Block(app, blockWidth, 2, mapWidth - blockWidth * i, 5, 5 - i))
 
-        self.finalBlock = Block(app, blockWidth, 2, mapWidth - blockWidth * 5, 5, 0)
-        
-        self.blocks.append(self.finalBlock)
-
+        # Get a new level
         while not self.completeLevel():
             pass
 
+        # If not on either end, add goomba
         for block in self.blocks:
             if block == self.startPos or block == self.finalBlock: continue
             block.addGoomba()
 
+    # Resets position of blocks
+    def reset(self, leftShift):
+
+        for block in self.blocks:
+            block.left += leftShift
+
+    # Checks if mario can eat mushroom
     def eatMushroom(self, top, right, bottom ,left):
 
         for block in self.blocks:
             if isinstance(block, MushroomBlock):
                 block.eatMushroom(top, right, bottom ,left)
     
-
+    # Returns a new block that is not in blocksTried or self.blocks
     def getNewBlock(self, blocksTried, length):
 
         level = random.randint(1, 4)
@@ -458,11 +461,13 @@ class Blocks(object):
         
         return thisBlock
     
+    # Check if toBlock is reachable from one jump from fromBlock
     def blockConnected(self, fromBlock, toBlock):
 
         return (abs(fromBlock.left - toBlock.left) // self.blockWidth < 6
                 and (toBlock.level <= fromBlock.level + 1))
 
+    # Uses backtracking to check if Mario can get from startBlock to endBlock
     def blockIsReachebleHelper(self, startBlock, endBlock):
 
         visited = []
@@ -471,6 +476,7 @@ class Blocks(object):
 
         return val
 
+    # Backtracking
     def blockIsReachable(self, currBlock, finalBlock, visited):
 
         for block in visited:
@@ -494,6 +500,7 @@ class Blocks(object):
         
         return False
 
+    # Returns the number of blocks connected by chance
     def numOfBlocks(self):
 
         rand = random.random()
@@ -507,6 +514,8 @@ class Blocks(object):
         else:
             return 4
 
+    # Generates the level
+    # Algorithm from https://www.gamasutra.com/view/feature/170049/how_to_make_insane_procedural_.php?page=3
     def completeLevel(self):
 
         blocksTried = []
@@ -552,17 +561,19 @@ class Blocks(object):
         return False
 
 
-    
+    # Scroll each individual blocks
     def scrollBlocks(self, xVelocity):
 
         for block in self.blocks:
             block.scrollBlock(xVelocity)
     
+    # Draw all the blocks
     def drawBlocks(self, canvas):
 
         for block in self.blocks:
             block.drawBlock(canvas)
     
+    # Check collision with Mario
     def collided(self, top, right, bottom, left, xVelocity, yVelocity):
         
         for block in self.blocks:
@@ -572,6 +583,7 @@ class Blocks(object):
         
         return (False, None, None)
     
+    # Magic method
     def __contains__(self, newBlock):
 
         for block in self.blocks:
@@ -590,6 +602,7 @@ class Block(object):
     def __init__(self, app, blockWidth, level, left, length, index):
 
         if Block.block == None:
+            # image from http://www.mariouniverse.com/sprites-nes-smb/
             Block.block = (app.loadImage('./assets/images/tiles.png')
                                         .crop((16, 0, 32, 16))
                                         .resize((blockWidth, blockWidth)))
@@ -601,19 +614,23 @@ class Block(object):
         self.top = app.height - blockWidth * 2 - blockWidth * 3 * level
         self.left = left
 
+        # Index of this block in the neighboring blocks
         self.index = index
+
         self.length = length
 
         self.goomba = None
 
         self.app = app
     
+    # Add goomba by chance
     def addGoomba(self):
 
         if self.length >= 3 and self.index == 0 and random.random() <= 0.5:
             self.goomba = Goomba(self.top - Goomba.height, self.left, self.length, self.app)
             self.app.goombas.append(self.goomba)
     
+    # Check collision with Mario
     def collided(self, top, right, bottom, left, xVelocity, yVelocity):
 
         if xVelocity != 0 and (top > self.top - Block.blockWidth and bottom < self.top):
@@ -637,10 +654,12 @@ class Block(object):
         return (isinstance(other, Block) and self.level == other.level
                 and self.left == other.left)
     
+    # Scroll this block
     def scrollBlock(self, xVelocity):
 
         self.left -= xVelocity
     
+    # Draw this block
     def drawBlock(self, canvas):
 
         if self.left > self.app.width + self.app.map.leftShift: return
@@ -650,8 +669,8 @@ class Block(object):
 
         canvas.create_image(cx, cy, 
                                 image=ImageTk.PhotoImage(self.block))
-        # canvas.create_text(cx, cy, text=f"{self.index}", fill="white")
 
+# Subclass of block
 class MushroomBlock(Block):
 
     mushroomBlock = None
@@ -660,15 +679,19 @@ class MushroomBlock(Block):
     def __init__(self, app, blockWidth, level, left, length, index):
         super().__init__(app, blockWidth, level, left, length, index)
         self.hasMushroom = True
+        # image from http://www.mariouniverse.com/sprites-nes-smb/
         MushroomBlock.mushroomBlock = (app.loadImage('./assets/images/tiles.png')
                                         .crop((368, 0, 384, 16))
                                         .resize((blockWidth, blockWidth)))
         self.block = MushroomBlock.mushroomBlock
+        # image from http://www.mariouniverse.com/sprites-nes-smb/
         MushroomBlock.popupBlock = (app.loadImage('./assets/images/tiles.png')
                                         .crop((416, 0, 432, 16))
                                         .resize((blockWidth, blockWidth)))
         self.mushroom = None
+        self.poped = False
     
+    # Check collision, but if mario from bottom, then pop mushroom
     def collided(self, top, right, bottom, left, xVelocity, yVelocity):
 
         if xVelocity != 0 and (top > self.top - Block.blockWidth and bottom < self.top):
@@ -688,6 +711,7 @@ class MushroomBlock(Block):
         
         return (False, 0, 0)
 
+    # Scroll this block and mushroom
     def scrollBlock(self, xVelocity):
 
         self.left -= xVelocity
@@ -695,11 +719,17 @@ class MushroomBlock(Block):
         if self.mushroom != None:
             self.mushroom.scrollMushroom(xVelocity)
     
+    # Pop mushroom out
     def popMushroom(self):
+
+        if self.poped:
+            return
 
         self.block = MushroomBlock.popupBlock
         self.mushroom = Mushroom(self.top - Mushroom.height, self.left, self.app)
+        self.poped = True
     
+    # Check if mario can eat mushroom
     def eatMushroom(self, top, right, bottom, left):
 
         if self.mushroom == None: return
@@ -708,6 +738,7 @@ class MushroomBlock(Block):
             self.mushroom = None
             self.app.lives += 1
 
+    # Draw current block
     def drawBlock(self, canvas):
 
         if self.left > self.app.width + self.app.map.leftShift: return
@@ -729,6 +760,7 @@ class Mushroom(object):
 
     @staticmethod
     def initialize(app):
+        # image from http://www.mariouniverse.com/sprites-nes-smb/
         Mushroom.image = (app.loadImage('./assets/images/items.png')
                                         .crop((214, 34, 230, 50))
                                         .resize((32, 32)))
@@ -743,9 +775,11 @@ class Mushroom(object):
         cx = self.left + Mushroom.width / 2
         cy = self.top + Mushroom.height / 2
 
+        
         canvas.create_image(cx, cy, 
                                 image=ImageTk.PhotoImage(Mushroom.image))
     
+    # Check if mario eats mushroom
     def eatMushroom(self, top, right, bottom, left):
 
         if (top > self.top - Mushroom.height and bottom < self.top):
@@ -774,6 +808,8 @@ class Goomba(object):
 
     def initialize(app):
 
+        # images from http://www.mariouniverse.com/sprites-nes-smb/
+
         sprite1 = (app.loadImage('./assets/images/enemies.png')
                                         .crop((0, 16, 16, 32))
                                         .resize((Goomba.width, Goomba.height)))
@@ -795,6 +831,9 @@ class Goomba(object):
         self.length = length
         self.moveRight = True
         self.app = app
+    
+    def reset(self, leftShift):
+        self.left += leftShift
 
     def scrollGoomba(self, xVelocity):
         self.left -= xVelocity
@@ -847,7 +886,6 @@ class Goomba(object):
         canvas.create_image(cx, cy, 
                                 image=ImageTk.PhotoImage(Goomba.sprites[self.sprite]))
 
-
 ###################
 #  Survival Map
 ###################
@@ -881,6 +919,16 @@ class Survival(object):
         
         # Sets up the blocks
         self.blocks = Blocks(app, self.blockDimension, self.maxWidth)
+    
+    def reset(self):
+
+        self.blocks.reset(self.leftShift)
+        self.clouds.reset(self.leftShift)
+        
+        for goomba in self.app.goombas:
+            goomba.reset(self.leftShift)
+        
+        self.leftShift = 0
 
     # Checks if character is going to be in the right margin of map
     def inRightMargin(self, right, xVelocity):
@@ -930,18 +978,36 @@ def survival_redrawAll(app, canvas):
     
     canvas.create_text(app.width - 10, 10, text = f"Lives: {app.lives}",
                         anchor="ne", fill = "white", font="Helvetica 30")
+    
+    if app.gameOver:
+        drawGameOver(app, canvas)
 
 def decrementLife(app):
-
-    app.mario = Mario(160, app.height - 188, app)
-    app.mario.jump(app.map)
-
-    app.goombaTimer = 0
 
     app.lives -= 1
 
     if app.lives <= 0:
         app.gameOver = True
+        return
+
+    app.map.reset()
+    app.mario = Mario(160, app.height - 188, app)
+    app.mario.jump(app.map)
+
+    app.goombaTimer = 0
+
+def drawGameOver(app, canvas):
+
+    if(app.lives > 0):
+        canvas.create_text(app.width / 2, app.height / 2,
+                            text = "YOU WIN!!",
+                            font = "Helvetica 50",
+                            fill = "white")
+    else:
+        canvas.create_text(app.width / 2, app.height / 2,
+                            text = "YOU LOSE",
+                            font = "Helvetica 50",
+                            fill = "white")
 
 # Controller
 def survival_timerFired(app):
@@ -965,6 +1031,11 @@ def survival_timerFired(app):
         for goomba in app.goombas:
             goomba.moveGoomba()
         app.goombaTimer %= 150
+    
+    if (app.mario.left > app.map.maxWidth - Block.blockWidth * 5 - app.map.leftShift
+            and app.mario.top >= app.height - Block.blockWidth * 2 - Block.blockWidth * 3 * 2 - Mario.height):
+        
+        app.gameOver = True
 
 # Controller
 def survival_keyPressed(app, event):
@@ -1027,16 +1098,13 @@ def titleScreen_redrawAll(app, canvas):
     canvas.create_text(app.width / 2, app.height / 3,
                        text = "Super Mario Bros!", font = "Helvetica 50")
     canvas.create_text(app.width / 2, app.height * 2 / 3,
-                       text = "Press Left Arrow to play Classic Mode, refer to map1-1.py for now\n\
-                               Press Right Arrow to play Survival Mode",
+                       text = "Press Right Arrow to play start",
                        font = "Helvetica 30")
 
 # Goes into different modes when keys pressed
 def titleScreen_keyPressed(app, event):
 
-    if event.key == "Left":
-        app.mode = "classic"
-    elif event.key == "Right":
+    if event.key == "Right":
         app.lives = 3
         app.gameOver = False
         app.mode = "survival"

@@ -2,19 +2,18 @@ Super Mario Bros
 
 1. Project Description:
 
-    A classic super mario game similar to https://supermarioemulator.com/supermario.php.
-    Adding in survival mode where the player controls Mario and try not to get hit by enemies.
+    A survival super mario game where the player controls Mario and try to get to the end.
 
 2. Structural Plan:
 
     All the characters and maps will be individual objects, with draw and move functions.
-    Images and sounds will be in the folder assets
+    Images will be in the folder assets
 
 3. Algorithmic Plan:
 
     - Acceleration, deceleration, and gravity jump
     - Platformer terrain generation for survival mode
-    - Pathfinding for enemies chasing the character in survival mode
+        - Uses backtracking to see if the blocks are reachable
 
 4. Version Control:
 
