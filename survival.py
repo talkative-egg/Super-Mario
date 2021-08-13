@@ -414,6 +414,35 @@ class GroundBlocks(object):
             canvas.create_image(cx, cy, 
                                 image=ImageTk.PhotoImage(self.fire))
 
+class Castle(object):
+
+    width = 82
+    height = 80
+
+    def __init__(self, app, left, top):
+
+        self.app = app
+
+        # image from http://www.mariouniverse.com/sprites-nes-smb/
+        self.image = (app.loadImage('./assets/images/misc.png')
+                                        .crop((246, 862, 328, 942)))
+        
+        self.left = left
+        self.top = top
+    
+    def scrollCastle(self, xVelocity):
+
+        self.left -= xVelocity
+    
+    def drawCastle(self, canvas):
+
+        if self.left > self.app.width: return
+
+        cx = self.left + Castle.width / 2
+        cy = self.top + Castle.height / 2
+
+        canvas.create_image(cx, cy, 
+                                image=ImageTk.PhotoImage(self.image))
 
 class Blocks(object):
 
@@ -437,6 +466,8 @@ class Blocks(object):
         # Add the final block where if mario reaches this block, game win
         self.finalBlock = Block(app, blockWidth, 2, mapWidth - blockWidth * 5, 5, 0)
         self.blocks.append(self.finalBlock)
+
+        app.castle = Castle(app, mapWidth - blockWidth * 3, app.height - blockWidth * 8 - Castle.height)
 
         # Add blocks next to final block for aesthetic purposes
         for i in range(0, 5):
@@ -470,7 +501,7 @@ class Blocks(object):
     def getNewBlock(self, blocksTried, length):
 
         level = random.randint(1, 4)
-        leftPosition = random.randint(0, self.maxBlocks - 1)
+        leftPosition = random.randint(0, self.maxBlocks - 5)
 
         thisBlock = Block(self.app, self.blockWidth, level, self.blockWidth * leftPosition, length, 0)
 
@@ -486,12 +517,17 @@ class Blocks(object):
 
                 return self.getNewBlock(blocksTried, length)
         
+        if (abs(thisBlock.left - self.startPos.left) // Block.blockWidth < 5 
+                and thisBlock.level == self.startPos.level):
+
+            return self.getNewBlock(blocksTried, length)
+        
         return thisBlock
     
     # Check if toBlock is reachable from one jump from fromBlock
     def blockConnected(self, fromBlock, toBlock):
 
-        return (abs(fromBlock.left - toBlock.left) // self.blockWidth < 6
+        return (abs(fromBlock.left - toBlock.left) // self.blockWidth < 5
                 and (toBlock.level <= fromBlock.level + 1))
 
     # Uses backtracking to check if Mario can get from startBlock to endBlock
@@ -640,10 +676,6 @@ class Block(object):
         self.goomba = None
 
         self.app = app
-    
-    # def __hash__(self):
-
-    #     return self.level ** 2 + self.left * 2
     
     # Add goomba by chance
     def addGoomba(self):
@@ -1076,6 +1108,8 @@ class Survival(object):
         
         self.leftShift = 0
 
+        self.app.castle = Castle(self.app, self.maxWidth - Block.blockWidth * 3, self.app.height - Block.blockWidth * 8 - Castle.height)
+
     # Checks if character is going to be in the right margin of map
     def inRightMargin(self, right, xVelocity):
         return self.leftShift + self.app.width < self.maxWidth and right + xVelocity > self.app.width - self.margin
@@ -1110,6 +1144,8 @@ class Survival(object):
         
         if self.app.lakitu.shell != None:
             self.app.lakitu.shell.scrollShell(xVelocity)
+
+        self.app.castle.scrollCastle(xVelocity)
     
 
     # Draw background and everything in map
@@ -1119,6 +1155,7 @@ class Survival(object):
         self.clouds.drawClouds(canvas)
         self.groundBlocks.drawBlocks(canvas)
         self.blocks.drawBlocks(canvas)
+        self.app.castle.drawCastle(canvas)
 
 # Draws everything in survival mode
 def survival_redrawAll(app, canvas):
@@ -1328,7 +1365,7 @@ def survival_timerFired(app):
 
     app.shellTimer += app.timerDelay
 
-    if app.shellTimer > 2000 and app.mario.left + 100 - app.lakitu.left < 150:
+    if app.shellTimer > 2000 and -50 < app.mario.left + 100 - app.lakitu.left < 150:
 
         app.lakitu.newShell()
         app.shellTimer = 0
@@ -1381,6 +1418,9 @@ def appStarted(app):
 
     app.goombas = []
 
+    # Images from https://www.nintendolife.com/news/2021/04/this_sealed_super_mario_bros_has_just_become_the_most_expensive_video_game_collectable_ever
+    app.titleScreen = app.loadImage("./assets/images/titleScreen.jpg").resize((app.width, app.height))
+
 def namePrompt_redrawAll(app, canvas):
 
     canvas.create_rectangle(0, 0, app.width, app.height, fill="#5c94fc")
@@ -1389,7 +1429,7 @@ def namePrompt_redrawAll(app, canvas):
                         fill = "white",
                         font = "Helvetica 50")
     canvas.create_text(app.width / 2, app.height / 4 + 50,
-                        text = "Press enter to finish",
+                        text = "Press enter/return to finish",
                         fill = "white",
                         font = "Helvetica 30")
     canvas.create_rectangle(app.width / 3, app.height * 3 / 7,
@@ -1399,6 +1439,13 @@ def namePrompt_redrawAll(app, canvas):
                        fill = "black",
                        font = "Helvetica 35",
                        text = app.name)
+    canvas.create_text(0, app.height - 40,
+                        text = '''\
+                        Objectives:
+                        Escape to the castle at the end of the map
+                        Not get killed by enemies''',
+                        anchor = "sw",
+                        font = "Helvetica 30",)
 
 def namePrompt_keyPressed(app, event):
 
@@ -1440,12 +1487,14 @@ def namePrompt_keyPressed(app, event):
 # Draws title screen
 def titleScreen_redrawAll(app, canvas):
 
-    canvas.create_rectangle(0, 0, app.width, app.height, fill="#5c94fc")
-    canvas.create_text(app.width / 2, app.height / 3,
-                       text = "Super Mario Bros!", font = "Helvetica 50")
-    canvas.create_text(app.width / 2, app.height * 2 / 3,
+    canvas.create_image(app.width / 2, app.height / 2, 
+                            image=ImageTk.PhotoImage(app.titleScreen))
+
+    canvas.create_text(app.width / 2, app.height - 250,
                        text = "Press Space to Start",
-                       font = "Helvetica 30")
+                       font = "Helvetica 80",
+                       fill = "black")
+                    #    fill = "#f3f5bf")
 
 # Goes into different modes when keys pressed
 def titleScreen_keyPressed(app, event):
