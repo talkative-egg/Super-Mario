@@ -1194,7 +1194,7 @@ def decrementLife(app):
 
 def gameOver(app):
 
-    app.leaderboard = list(ref.get()["highScores"])
+    app.leaderboard = list(ref.get()["highScores"]) or []
 
     if app.lives > 0:
         app.leaderboard.append([app.name, app.time])
