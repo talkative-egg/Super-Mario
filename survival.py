@@ -1,10 +1,13 @@
 # Graphics module from https://www.cs.cmu.edu/~112/notes/cmu_112_graphics.py
 from cmu_112_graphics import *
 
-import math, random, time
+import math, random, time, numpy
 
-from datetime import date
-
+# Firebase used as backend system to store the high scores
+# All firebase methods learned from this docs
+# https://firebase.google.com/docs/database/admin/start?authuser=0
+# Code written in this block are from the docs and tweaked with the path to this project
+###########################################################################
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
@@ -19,8 +22,8 @@ firebase_admin.initialize_app(cred, {
 
 # As an admin, the app has access to read and write all data, regradless of Security Rules
 ref = db.reference('/')
+###########################################################################
 
-# users_ref = ref.child('highScores')
 
 # Distance formula, helper function
 def distance(x0, y0, x1, y1):
@@ -196,6 +199,8 @@ class Mario(object):
         for goomba in app.goombas:
             goomba.kill(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
         
+        app.lakitu.kill(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
+        
         # Check if mario eats a mushroom
         app.map.blocks.eatMushroom(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
 
@@ -269,7 +274,6 @@ class Mario(object):
 
                 self.yVelocity = 0
                 self.yMotion = 0
-                self.level = 1
 
                 self.top = collided[2] - Mario.height
 
@@ -278,6 +282,8 @@ class Mario(object):
         # Check if mario kills any of the goombas
         for goomba in self.app.goombas:
             goomba.kill(self.top, self.left + Mario.width, self.top + Mario.height, self.left, self.yVelocity)
+        
+        self.app.lakitu.kill(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
         
         # Check if mario can eat any mushroom
         self.app.map.blocks.eatMushroom(self.top, self.left + Mario.width, self.top + Mario.height, self.left)
@@ -450,6 +456,8 @@ class Blocks(object):
 
         for block in self.blocks:
             block.left += leftShift
+            if isinstance(block, MushroomBlock):
+                block.mushroom = None
 
     # Checks if mario can eat mushroom
     def eatMushroom(self, top, right, bottom ,left):
@@ -548,13 +556,14 @@ class Blocks(object):
 
             for i in range(numOfBlocks):
 
-                if random.random() <= 0.85:
+                if random.random() <= 0.85 or newBlock.level == 1:
                     block = Block(self.app, self.blockWidth, newBlock.level, newBlock.left + self.blockWidth * (i + 1), numOfBlocks, i + 1)
                 else:
                     block = MushroomBlock(self.app, self.blockWidth, newBlock.level, newBlock.left + self.blockWidth * (i + 1), numOfBlocks, i + 1)
 
-                if block in self:
-                    break
+                for existingBlock in self.blocks:
+                    if block.left == existingBlock.left and block.level == existingBlock.level:
+                        break
 
                 newBlocks.append(block)
 
@@ -601,16 +610,6 @@ class Blocks(object):
                 return collision
         
         return (False, None, None)
-    
-    # Magic method
-    def __contains__(self, newBlock):
-
-        for block in self.blocks:
-
-            if block == newBlock:
-                return True
-
-        return False
 
 
 class Block(object):
@@ -641,6 +640,10 @@ class Block(object):
         self.goomba = None
 
         self.app = app
+    
+    # def __hash__(self):
+
+    #     return self.level ** 2 + self.left * 2
     
     # Add goomba by chance
     def addGoomba(self):
@@ -819,11 +822,135 @@ class Mushroom(object):
     def scrollMushroom(self, xVelocity):
         self.left -= xVelocity
 
+class LakituShell(object):
+
+    width = 16
+    height = 16
+    image = None
+
+    def __init__(self, app, cx, cy, marioCx, marioCy):
+
+        if LakituShell.image == None:
+            # image from http://www.mariouniverse.com/sprites-nes-smb/
+            LakituShell.image = (app.loadImage('./assets/images/enemies.png')
+                                            .crop((560, 16, 576, 32))
+                                            .resize((LakituShell.width, LakituShell.height)))
+        self.app = app
+
+        self.Xs = [[cx ** 2,                        cx,                      1],
+                   [((cx - marioCx) / 3 + marioCx) ** 2, (cx - marioCx) / 3 + marioCx, 1],
+                   [marioCx ** 2,                   marioCx,                 1]]
+        self.Ys = [[cy],
+                   [cy + 20],
+                   [marioCy]]
+
+        # inverse function from numpy docs
+        # https://numpy.org/doc/stable/reference/generated/numpy.linalg.inv.html
+        # solving quadratic equation learned from spicy but implemented without looking at the original code
+        # https://scs.hosted.panopto.com/Panopto/Pages/Viewer.aspx?id=1a8832d3-dc6a-47ec-86ac-ad73014058f9
+        self.parabola = numpy.linalg.inv(self.Xs) @ self.Ys
+
+        if self.parabola[0] < 0:
+            self.app.lakitu.shell = None
+            self.app.shellTimer = 2000
+        
+        self.cx = cx
+        self.cy = cy
+        self.shift = 0
+
+    def move(self):
+
+        self.cx -= 3
+        self.dy = ([self.cx ** 2, self.cx, 1] @ self.parabola)[0] - self.cy
+        self.cy = self.cy + self.dy
+
+        cx = self.cx - self.shift
+        cy = self.cy
+
+        collided = self.app.map.collided(cy - LakituShell.height,
+                                         cx + LakituShell.width,
+                                         cy + LakituShell.height,
+                                         cx - LakituShell.width,
+                                         3, self.dy)
+        self.hitMario()
+        if collided[0]:
+            self.app.lakitu.shell = None
+    
+
+    def hitMario(self):
+
+        cx = self.cx - self.shift
+        cy = self.cy
+
+        if (cx > self.app.mario.left and cx < self.app.mario.left + Mario.width
+                and cy < self.app.mario.top + Mario.height and cy + self.dy > self.app.mario.top):
+            decrementLife(self.app)
+            self.app.lakitu.shell = None
+
+    def scrollShell(self, xVelocity):
+        self.shift += xVelocity
+        
+    def drawShell(self, canvas):
+
+        canvas.create_image(self.cx - self.shift, self.cy, 
+                                image=ImageTk.PhotoImage(LakituShell.image))
+
+class Lakitu(object):
+
+    width = 32
+    height = 48
+
+    def __init__(self, app):
+        self.top = 70
+        self.left = app.mario.left + 100
+        # image from http://www.mariouniverse.com/sprites-nes-smb/
+        self.image = (app.loadImage('./assets/images/enemies.png')
+                                        .crop((432, 8, 448, 32))
+                                        .resize((Lakitu.width, Lakitu.height)))
+        self.app = app
+        self.shell = None
+        self.newShell()
+    
+    def move(self):
+
+        distance = self.app.mario.left + 100 - self.left
+
+        if distance < 10:
+            self.left += distance
+        else:
+            self.left += distance / 8
+    
+    def kill(self, top, right, bottom, left):
+
+        if (top < self.top + Lakitu.height and bottom > self.top
+                and right > self.left and left < self.left + Lakitu.width):
+
+            decrementLife(self.app)
+    
+    def newShell(self):
+
+        self.shell = LakituShell(self.app, self.left + Lakitu.width / 2, self.top + Lakitu.height / 2,
+                                 self.app.mario.left + Mario.width / 2, self.app.mario.top + Mario.height / 2)
+        self.app.lakituTimer = -500
+    
+    def scrollLakitu(self, xVelocity):
+
+        self.left -= xVelocity
+
+    
+    def drawLakitu(self, canvas):
+
+        cx = self.left + Lakitu.width / 2
+        cy = self.top + Lakitu.height / 2
+
+        canvas.create_image(cx, cy, 
+                                image=ImageTk.PhotoImage(self.image))
+
 class Goomba(object):
 
     sprites = []
-    width = 32
-    height = 32
+    width = 28
+    height = 28
 
     def initialize(app):
 
@@ -837,7 +964,7 @@ class Goomba(object):
                                         .resize((Goomba.width, Goomba.height)))
         sprite3 = (app.loadImage('./assets/images/enemies.png')
                                         .crop((32, 24, 48, 32))
-                                        .resize((Goomba.width, 16)))
+                                        .resize((Goomba.width, Goomba.height // 2)))
         Goomba.sprites.append(sprite1)
         Goomba.sprites.append(sprite2)
         Goomba.sprites.append(sprite3)
@@ -882,8 +1009,8 @@ class Goomba(object):
     
     def kill(self, top, right, bottom, left, yVelocity = 0):
 
-        if (right > self.left and left < self.left + Goomba.width
-                and bottom < self.top and bottom + yVelocity > self.top):
+        if (right > self.left - 10 and left < self.left + Goomba.width + 10
+                and bottom < self.top + 10 and bottom + yVelocity > self.top):
             
             self.sprite = 2
         
@@ -922,7 +1049,7 @@ class Survival(object):
         self.height = app.height
         
         # Sets left and right margin for when map scrolls
-        self.margin = 250
+        self.margin = 350
 
         # Sets width and height of blocks to be 32
         self.blockDimension = 32
@@ -978,6 +1105,11 @@ class Survival(object):
 
         for goomba in self.app.goombas:
             goomba.scrollGoomba(xVelocity)
+        
+        self.app.lakitu.scrollLakitu(xVelocity)
+        
+        if self.app.lakitu.shell != None:
+            self.app.lakitu.shell.scrollShell(xVelocity)
     
 
     # Draw background and everything in map
@@ -999,6 +1131,10 @@ def survival_redrawAll(app, canvas):
                         anchor="ne", fill="white", font="Helvetica 30")
     canvas.create_text(10, 10, text = f"Time: {app.time}s",
                         anchor="nw", fill="white", font="Helvetica 30")
+
+    app.lakitu.drawLakitu(canvas)
+    if app.lakitu.shell != None:
+        app.lakitu.shell.drawShell(canvas)
     
     if app.gameOver:
         drawGameOver(app, canvas)
@@ -1017,6 +1153,7 @@ def decrementLife(app):
     app.mario.jump(app.map)
 
     app.goombaTimer = 0
+    app.lakitu.shell = None
 
 def gameOver(app):
 
@@ -1026,12 +1163,11 @@ def gameOver(app):
         app.leaderboard.append([app.name, app.time])
         app.leaderboard = mergeSort(app.leaderboard)
 
-        if len(app.leaderboard) > 10:
-            app.leaderboard = app.leaderboard[:10]
-
         ref.set({
             "highScores": app.leaderboard
         })
+
+    app.personalBest = list(filter(lambda x: x[0] == app.name, app.leaderboard))
 
 def merge(L1, L2):
 
@@ -1050,6 +1186,8 @@ def merge(L1, L2):
     
     return newL + L1[index1:] + L2[index2:]
 
+# sorting algorithm learned from spicy but implemented without looking at the original code
+# https://scs.hosted.panopto.com/Panopto/Pages/Viewer.aspx?id=e8a820ab-d3e1-4b9c-9416-ad6b0041e2e2
 def mergeSort(L):
 
     if len(L) == 1 or L == []:
@@ -1080,13 +1218,14 @@ def drawGameOver(app, canvas):
                             fill = "white",
                             anchor = "n")
     drawLeaderboard(app, canvas)
+    drawPersonalBest(app, canvas)
 
 def drawLeaderboard(app, canvas):
 
-    canvas.create_rectangle(app.width / 4, app.height / 6,
-                            app.width * 3 / 4, app.height * 5 / 6,
+    canvas.create_rectangle(app.width / 9, app.height / 6,
+                            app.width * 4 / 9, app.height * 5 / 6,
                             fill = "white")
-    canvas.create_text(app.width / 2, app.height / 6 + 10,
+    canvas.create_text(app.width * 2.5 / 9, app.height / 6 + 10,
                        text = "Leaderboard",
                        font="Helvetica 30",
                        fill = "black",
@@ -1095,27 +1234,58 @@ def drawLeaderboard(app, canvas):
 
         if i < len(app.leaderboard):
 
-            canvas.create_text(app.width / 4 + 20, app.height / 6 + 20 + 30 * (i + 1),
+            canvas.create_text(app.width / 9 + 20, app.height / 6 + 20 + 30 * (i + 1),
                            text = f"{i + 1}:   {app.leaderboard[i][0]}",
                            font = "Helvetica 25",
                            fill = "black",
                            anchor = "nw")
 
-            canvas.create_text(app.width * 3 / 4 - 20, app.height / 6 + 20 + 30 * (i + 1),
+            canvas.create_text(app.width * 4 / 9 - 20, app.height / 6 + 20 + 30 * (i + 1),
                            text = f"{app.leaderboard[i][1]}s",
                            font = "Helvetica 25",
                            fill = "black",
                            anchor = "ne")
 
         else:
-            canvas.create_text(app.width / 4 + 20, app.height / 6 + 20 + 30 * (i + 1),
+            canvas.create_text(app.width / 9 + 20, app.height / 6 + 20 + 30 * (i + 1),
                            text = f"{i + 1}:",
                            font = "Helvetica 25",
                            fill = "black",
                            anchor = "nw")
 
         
-    
+def drawPersonalBest(app, canvas):
+
+    canvas.create_rectangle(app.width * 5 / 9, app.height / 6,
+                            app.width * 8 / 9, app.height * 5 / 6,
+                            fill = "white")
+    canvas.create_text(app.width * 6.5 / 9, app.height / 6 + 10,
+                       text = "Personal Best",
+                       font="Helvetica 30",
+                       fill = "black",
+                       anchor = "n")
+    for i in range(10):
+
+        if i < len(app.personalBest):
+
+            canvas.create_text(app.width * 5 / 9 + 20, app.height / 6 + 20 + 30 * (i + 1),
+                           text = f"{i + 1}:   {app.personalBest[i][0]}",
+                           font = "Helvetica 25",
+                           fill = "black",
+                           anchor = "nw")
+
+            canvas.create_text(app.width * 8 / 9 - 20, app.height / 6 + 20 + 30 * (i + 1),
+                           text = f"{app.personalBest[i][1]}s",
+                           font = "Helvetica 25",
+                           fill = "black",
+                           anchor = "ne")
+
+        else:
+            canvas.create_text(app.width * 5 / 9 + 20, app.height / 6 + 20 + 30 * (i + 1),
+                           text = f"{i + 1}:",
+                           font = "Helvetica 25",
+                           fill = "black",
+                           anchor = "nw")
 
 # Controller
 def survival_timerFired(app):
@@ -1147,25 +1317,27 @@ def survival_timerFired(app):
         
         app.gameOver = True
         gameOver(app)
+    
+    app.lakituTimer += app.timerDelay
+
+    if app.lakituTimer > 800:
+        app.lakitu.move()
+    
+    if app.lakitu.shell != None:
+        app.lakitu.shell.move()
+
+    app.shellTimer += app.timerDelay
+
+    if app.shellTimer > 2000 and app.mario.left + 100 - app.lakitu.left < 150:
+
+        app.lakitu.newShell()
+        app.shellTimer = 0
 
 # Controller
 def survival_keyPressed(app, event):
 
     if event.key == 'r':
-        # app.goombas = []
-        # app.gameOver = False
-        # app.mode = "survival"
-        # app.map = Survival(app)
-        # Mario.initialize(app)
-        # app.mario = Mario(160, app.height - 188, app)
-        # app.mario.jump(app.map)
-        # app.lives = 3
 
-        # Goomba.initialize(app)
-        # app.goombaTimer = 0
-
-        # app.timer = time.time()
-        # app.time = 0
         app.mode = "namePrompt"
         app.name = ""
 
@@ -1230,11 +1402,11 @@ def namePrompt_redrawAll(app, canvas):
 
 def namePrompt_keyPressed(app, event):
 
-    keywords = ["Tab", "Delete", "Escape", "Up", "Right", "Down", "Left"]
+    keywords = ["Tab", "Delete", "Escape", "Up", "Right", "Down", "Left", "Enter"]
 
     if event.key == "Delete" and len(app.name) > 0:
         app.name = app.name[:-1]
-    elif event.key == "Enter" and not app.name.isspace():
+    elif event.key == "Enter" and not app.name.isspace() and app.name != "":
 
         app.goombas = []
 
@@ -1248,6 +1420,10 @@ def namePrompt_keyPressed(app, event):
         Mario.initialize(app)
         app.mario = Mario(160, app.height - 188, app)
         app.mario.jump(app.map)
+
+        app.lakitu = Lakitu(app)
+        app.lakituTimer = 0
+        app.shellTimer = 0
 
         Goomba.initialize(app)
         # app.goombas.append(Goomba(200, 400))
@@ -1278,4 +1454,4 @@ def titleScreen_keyPressed(app, event):
         app.mode = "namePrompt"
         app.name = ""
 
-runApp(width=1280, height=576)
+runApp(width=1280, height=672)

@@ -19,3 +19,9 @@ Super Mario Bros
 
     Uses github to host this project, image is in this folder named "version control.png"
     Link to github repository: https://github.com/talkative-egg/Super-Mario
+
+
+TP3 update:
+
+    - Added in lakitu throwing shells in a parabola curve
+    - Added in firebase backend system to store the scores
